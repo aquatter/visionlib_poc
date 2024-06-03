@@ -13,7 +13,6 @@ struct MagicSORFilterSettings {
     size_t image_height_;
     size_t minimal_cluster_size_;
     float sigma_multiplier_;
-    uint8_t minimum_neighbours_;
 };
 
 class MagicSORFilter {

@@ -15,13 +15,27 @@ if(NOT ${BUILD_TEST_APP})
 
     function(get_binaries path file_list)
         foreach(file_name ${file_list})
-            message(STATUS "Downloading " ${file_name} "...")
             set(SAVE_PATH ${CMAKE_CURRENT_LIST_DIR}/${path}/${file_name})
-            file(DOWNLOAD
-                ${_BASE_URL}${file_name}
-                ${SAVE_PATH}
-                SHOW_PROGRESS)
-            message(STATUS "Saved to: " ${SAVE_PATH})
+
+            message(STATUS "Downloading " ${file_name} "...")
+
+            if(NOT EXISTS ${SAVE_PATH})
+                file(DOWNLOAD
+                    ${_BASE_URL}${file_name}
+                    ${SAVE_PATH}
+                    SHOW_PROGRESS
+                    STATUS DOWNLOAD_RESULT)
+
+                list(GET DOWNLOAD_RESULT 0 DOWNLOAD_RESULT_CODE)
+
+                if(NOT DOWNLOAD_RESULT_CODE EQUAL 0)
+                    message(FATAL_ERROR "Failed downloading ${file_name}! Error: ${DOWNLOAD_RESULT}")
+                endif()
+
+                message(STATUS "Saved to: " ${SAVE_PATH})
+            else()
+                message(STATUS ${file_name} " already downloaded")
+            endif()
         endforeach()
     endfunction()
 

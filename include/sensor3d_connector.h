@@ -2,6 +2,7 @@
 #include "point.h"
 #include "pointcloud.h"
 #include "roi.h"
+#include "sensor3d_connector.h"
 #include "welib3d_export.h"
 #include <array>
 #include <chrono>
@@ -30,7 +31,10 @@ enum class cmd {
     ACQUISITION_START,
     ACQUISITION_STOP,
     SET_TRIGGER_SOFTWARE,
-    CONTRAST_COMPARISON_FILTER
+    CONTRAST_COMPARISON_FILTER,
+    EXTRINSIC_MATRIX,
+    INTRINSIC_MATRIX,
+    DISTORTION,
 };
 
 enum class SensorMode { MODE_3D = 4, MODE_2D = 5 };
@@ -38,6 +42,8 @@ enum class TriggerSource { INTERNAL = 0, SOFTWRARE = 1, IO1 = 2, IO2 = 3, IO3 = 
 enum class PatternType { PATTERN_16 = 16, PATTERN_28 = 28, PATTERN_SOLID };
 
 namespace detail {
+
+#define SINGLE_ARG(A, B) A, B
 
 #define PARAM_NAME_INFO(F)                                                                         \
     F(we::cmd::PIXEL_X_MAX, int, "GetPixelXMax")                                                   \
@@ -52,7 +58,10 @@ namespace detail {
     F(we::cmd::ACQUISITION_START, void, "SetAcquisitionStart")                                     \
     F(we::cmd::ACQUISITION_STOP, void, "SetAcquisitionStop")                                       \
     F(we::cmd::SET_TRIGGER_SOFTWARE, void, "SetTriggerSoftware")                                   \
-    F(we::cmd::CONTRAST_COMPARISON_FILTER, float, "SetContrastComparisonFilterMinPhase")
+    F(we::cmd::CONTRAST_COMPARISON_FILTER, float, "SetContrastComparisonFilterMinPhase")           \
+    F(we::cmd::EXTRINSIC_MATRIX, Matrix4f, "GetExtrinsicCameraParameters")                         \
+    F(we::cmd::INTRINSIC_MATRIX, Matrix3f, "GetIntrinsicCameraParameters")                         \
+    F(we::cmd::DISTORTION, SINGLE_ARG(std::array<float, 5>), "GetIntrinsicCameraParameters")
 
 template <we::cmd name> struct param_traits {};
 
@@ -69,9 +78,17 @@ template <typename T> T string_to_val(const std::string_view buf);
 template <> inline float string_to_val<float>(const std::string_view buf) {
     return std::stof(buf.data());
 }
+
 template <> inline int string_to_val<int>(const std::string_view buf) {
     return std::stoi(buf.data());
 }
+
+template <> WELIB3D_EXPORT Matrix4f string_to_val<Matrix4f>(const std::string_view buf);
+
+template <> WELIB3D_EXPORT Matrix3f string_to_val<Matrix3f>(const std::string_view buf);
+
+template <>
+WELIB3D_EXPORT std::array<float, 5> string_to_val<std::array<float, 5>>(const std::string_view buf);
 
 template <typename T> inline std::string val_to_string(const T &val) { return {}; }
 

@@ -4,9 +4,12 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
+#include <fstream>
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
@@ -15,7 +18,7 @@
 
 namespace we {
 
-enum class Prop { NORMALS, INTENSITY, CONFIDENCE, RGB };
+enum class Prop { NORMALS, INTENSITY, CONFIDENCE, RGB, LAST_PROP };
 
 namespace detail {
 
@@ -36,6 +39,17 @@ template <we::Prop name> struct prop_traits {};
 PROP_NAME_INFO(DECLARE_PROP_TRAITS_)
 
 template <we::Prop name> using prop_traits_t = typename prop_traits<name>::type;
+
+template <we::Prop name> using prop_span_t = std::span<typename prop_traits<name>::type>;
+
+template <we::Prop name>
+using prop_const_span_t = std::span<const typename prop_traits<name>::type>;
+
+template <we::Prop name> using prop_vector_t = std::vector<typename prop_traits<name>::type>;
+
+template <we::Prop name>
+using prop_opt_vector_t = std::optional<std::vector<typename prop_traits<name>::type>>;
+
 template <we::Prop name> constexpr inline std::string_view prop_traits_v = prop_traits<name>::tag;
 
 } // namespace detail
@@ -228,25 +242,26 @@ class PropertyContainer {
     std::vector<std::unique_ptr<BaseProperty>> properties_;
 };
 
-template <typename T> class PointCloud {
+template <typename T> class PointCloudBase {
   public:
     using point_type = T;
     using scalar_type = typename T::scalar_type;
     using vector_type = std::vector<point_type>;
     using span_type = std::span<point_type>;
+    using const_span_type = std::span<const point_type>;
 
-    PointCloud() = default;
+    PointCloudBase() = default;
 
-    PointCloud(span_type vec)
+    PointCloudBase(span_type vec)
         : data_not_owned_{vec} {}
-    PointCloud(vector_type &&vec) noexcept
+    PointCloudBase(vector_type &&vec) noexcept
         : data_owned_{std::move(vec)} {}
 
-    PointCloud(const PointCloud &) = default;
-    PointCloud(PointCloud &&) noexcept = default;
+    PointCloudBase(const PointCloudBase &) = default;
+    PointCloudBase(PointCloudBase &&) noexcept = default;
 
-    PointCloud &operator=(const PointCloud &) = default;
-    PointCloud &operator=(PointCloud &&) noexcept = default;
+    PointCloudBase &operator=(const PointCloudBase &) = default;
+    PointCloudBase &operator=(PointCloudBase &&) noexcept = default;
 
     void create(size_t size) {
         data_owned_.resize(size);
@@ -376,12 +391,28 @@ template <typename T> class PointCloud {
         return prop_container_.handle<detail::prop_traits_t<name>>(detail::prop_traits_v<name>);
     }
 
+    template <we::Prop name>
+    [[nodiscard]] std::optional<std::span<detail::prop_traits_t<name>>> property() {
+        if(auto ph{get_property_handle<name>()}; ph.is_valid()) {
+            return property(ph);
+        }
+        return std::nullopt;
+    }
+
+    template <we::Prop name>
+    [[nodiscard]] std::optional<std::span<const detail::prop_traits_t<name>>> property() const {
+        if(auto ph{get_property_handle<name>()}; ph.is_valid()) {
+            return property(ph);
+        }
+        return std::nullopt;
+    }
+
     template <typename OtherScalar>
         requires std::is_convertible_v<scalar_type, OtherScalar> and
                  std::is_arithmetic_v<OtherScalar>
-    [[nodiscard]] PointCloud<Matrix<OtherScalar, T::nRows, T::nCols>> cast() const {
+    [[nodiscard]] PointCloudBase<Matrix<OtherScalar, T::nRows, T::nCols>> cast() const {
 
-        PointCloud<Matrix<OtherScalar, T::nRows, T::nCols>> res;
+        PointCloudBase<Matrix<OtherScalar, T::nRows, T::nCols>> res;
         res.create(size());
 
         auto input_pts{res.points()};
@@ -390,36 +421,114 @@ template <typename T> class PointCloud {
         std::transform(out_pts.begin(), out_pts.end(), input_pts.begin(),
                        [](auto &&val) { return val.template cast<OtherScalar>(); });
 
+        res.prop_container_ = prop_container_;
         return res;
     }
 
+    template <typename Writer> [[nodiscard]] bool write(const std::string_view path) const {
+        std::ofstream f{path.data(), std::ios_base::binary};
+
+        if(not f.is_open() or not f.good()) {
+            return false;
+        }
+
+        write<Writer>(f);
+        return true;
+    }
+
+    template <typename Writer> void write(std::ostream &stream) const {
+        Writer writer{stream};
+        write(writer);
+    }
+
+    template <typename Writer> void write(Writer &writer) const {
+        writer.write_vertices(points());
+
+        if(auto val{property<Prop::NORMALS>()}; val) {
+            writer.write_normals(*val);
+        }
+
+        if(auto val{property<Prop::INTENSITY>()}; val) {
+            writer.write_intensity(*val);
+        }
+    }
+
+    template <typename Reader> [[nodiscard]] bool read(const std::string_view path) {
+        std::ifstream f{path.data(), std::ios_base::binary};
+
+        if(not f.is_open() or not f.good()) {
+            return false;
+        }
+
+        return read<Reader>(f);
+    }
+
+    template <typename Reader> [[nodiscard]] bool read(std::istream &stream) {
+        Reader reader{stream};
+        return read(reader);
+    }
+
+    template <typename Reader> [[nodiscard]] bool read(Reader &reader) {
+
+        prop_container_.clear();
+        data_owned_.clear();
+        data_not_owned_ = {};
+
+        if(auto vertices{reader.read_points()}; vertices) {
+            data_owned_ = std::move(*vertices);
+        } else {
+            return false;
+        }
+
+        if(auto normals{reader.read_point_normals()}; normals) {
+            add_property<Prop::NORMALS>(std::move(*normals));
+        }
+
+        if(auto intensity{reader.read_intensity()}; intensity) {
+            add_property<Prop::INTENSITY>(std::move(*intensity));
+        }
+
+        return true;
+    }
+
   protected:
+    template <typename OtherT> friend class PointCloudBase;
+
     std::vector<T> data_owned_;
     std::span<T> data_not_owned_;
     PropertyContainer prop_container_;
 };
 
-template <typename T> class StructuredPointCloud : public PointCloud<T> {
+template <typename T> class PointCloud : public PointCloudBase<T> {
   public:
-    using Base = PointCloud<T>;
+    using Base = PointCloudBase<T>;
+    using PointCloudBase<T>::PointCloudBase;
+
+    template <typename OtherScalar>
+        requires std::is_convertible_v<typename Base::scalar_type, OtherScalar> and
+                 std::is_arithmetic_v<OtherScalar>
+    [[nodiscard]] PointCloud<Matrix<OtherScalar, T::nRows, T::nCols>> cast() const {
+        return PointCloud<Matrix<OtherScalar, T::nRows, T::nCols>>{
+            Base::template cast<OtherScalar>()};
+    }
+
+  private:
+    template <typename OtherT> friend class PointCloud;
+    PointCloud(Base &&base) noexcept
+        : Base{std::move(base)} {}
+};
+
+template <typename T> class StructuredPointCloud : public PointCloudBase<T> {
+  public:
+    using Base = PointCloudBase<T>;
     StructuredPointCloud() = default;
 
     explicit StructuredPointCloud(const typename Base::span_type vec, size_t width, size_t height,
                                   typename Base::point_type empty_value)
-        : PointCloud<T>{vec}
+        : Base{vec}
         , width_{width}
         , height_{height}
         , empty_value_{empty_value} {}
-
-    explicit StructuredPointCloud(PointCloud<T> &&pcd, size_t width, size_t height,
-                                  typename PointCloud<T>::point_type empty_value)
-        : Base{std::move(pcd)}
-        , width_{width}
-        , height_{height}
-        , empty_value_{empty_value} {
-
-        assert_true([&]() { return Base::size() == width * height; }, "wrong point cloud size");
-    }
 
     StructuredPointCloud(Base::vector_type &&vec, size_t width, size_t height,
                          typename Base::point_type empty_value)
@@ -452,6 +561,47 @@ template <typename T> class StructuredPointCloud : public PointCloud<T> {
         Base::create(std::move(vec));
     }
 
+    PointCloud<T> pointcloud() const {
+        std::vector<T> pts;
+        pts.reserve(this->size());
+
+        const auto _points{this->points()};
+
+        for(auto &&p :
+            _points | std::views::filter([this](auto &&val) { return val != empty_value_; })) {
+            pts.push_back(p);
+        }
+
+        pts.shrink_to_fit();
+        PointCloud<T> ret{std::move(pts)};
+
+        auto copy_property{[this, &_points, &ret]<we::Prop name>() {
+            if(auto vals{this->template property<name>()}; vals) {
+                using val_t = detail::prop_traits_t<name>;
+                std::vector<val_t> _vals;
+                _vals.reserve(this->size());
+
+                for(auto &&i : std::views::iota(0ull, this->size())) {
+
+                    if(_points[i] == empty_value_) {
+                        continue;
+                    }
+
+                    _vals.push_back((*vals)[i]);
+                }
+
+                _vals.shrink_to_fit();
+                ret.add_property<name>(std::move(_vals));
+            }
+        }};
+
+        [&copy_property]<int... I>(std::integer_sequence<int, I...>) {
+            ((copy_property.template operator()<static_cast<we::Prop>(I)>()), ...);
+        }(std::make_integer_sequence<int, static_cast<int>(we::Prop::LAST_PROP)>{});
+
+        return ret;
+    }
+
     [[nodiscard]] typename Base::point_type &operator()(size_t i, size_t j) {
         return Base::operator[](i * width_ + j);
     }
@@ -463,6 +613,7 @@ template <typename T> class StructuredPointCloud : public PointCloud<T> {
     [[nodiscard]] size_t width() const noexcept { return width_; }
     [[nodiscard]] size_t height() const noexcept { return height_; }
     [[nodiscard]] Base::point_type empty_value() const noexcept { return empty_value_; }
+    [[nodiscard]] Base::point_type &empty_value() noexcept { return empty_value_; }
 
     [[nodiscard]] bool point_valid(size_t i, size_t j) const {
         return Base::points()[i * width_ + j] != empty_value_;
@@ -478,9 +629,25 @@ template <typename T> class StructuredPointCloud : public PointCloud<T> {
     }
 
   private:
+    template <typename OtherT> friend class StructuredPointCloud;
+
+    explicit StructuredPointCloud(Base &&pcd, size_t width, size_t height,
+                                  typename Base::point_type empty_value)
+        : Base{std::move(pcd)}
+        , width_{width}
+        , height_{height}
+        , empty_value_{empty_value} {
+
+        assert_true([&]() { return Base::size() == width * height; }, "wrong point cloud size");
+    }
+
     size_t width_{0};
     size_t height_{0};
+
     Base::point_type empty_value_{std::numeric_limits<typename Base::scalar_type>::min()};
 };
+
+using PointCloud3f = PointCloud<we::Point3f>;
+using StructuredPointCloud3f = StructuredPointCloud<we::Point3f>;
 
 } // namespace we
