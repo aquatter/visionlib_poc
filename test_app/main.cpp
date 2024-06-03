@@ -24,14 +24,14 @@ int main(int, char **) {
     sensor.set<cmd::ACQUISITION_START>();
     sensor.set<cmd::SET_TRIGGER_SOFTWARE>();
 
-    std::puts("Capture point cloud");
+    std::puts("== Capture point cloud");
     auto pcd{sensor.get_pointcloud()};
 
     sensor.set<cmd::ACQUISITION_STOP>();
 
     save_e57(pcd, "point_cloud.e57");
 
-    std::puts("Magic SOR...");
+    std::puts("== Magic SOR...");
     MagicSORFilter{MagicSORFilterSettings{.image_width_ = pcd.width(),
                                           .image_height_ = pcd.height(),
                                           .minimal_cluster_size_ = 100,
@@ -40,7 +40,7 @@ int main(int, char **) {
 
     save_e57(pcd, "point_cloud_filtered.e57");
 
-    std::puts("Normals estimation...");
+    std::puts("== Normals estimation...");
     NormalsEstimator{NormalsEstimatorSettings{.image_width_ = pcd.width(),
                                               .image_height_ = pcd.height(),
                                               .window_size_ = 11,
@@ -52,7 +52,7 @@ int main(int, char **) {
 
     save_e57(pcd, "point_cloud_filtered_with_normals.e57");
 
-    std::puts("Filling holes...");
+    std::puts("== Filling holes...");
 
     we::PonintCloudHoleFiller{
         we::PointCloudHoleFillerSettings{
