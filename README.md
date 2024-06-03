@@ -5,6 +5,7 @@ A Fancy Computer Vision Library by [Wenglor](https://www.wenglor.com)
 
 ## What is included so far:
 * Matrix, Point, PointCloud and Structured point cloud types
+* Polygonal Mesh type
 * Saving/Loading to [E57](http://www.libe57.org/) format
 * Saving/Loading to PLY format
 * Loading from ASCII
@@ -13,6 +14,7 @@ A Fancy Computer Vision Library by [Wenglor](https://www.wenglor.com)
 * Magic SOR for structured pointclouds
 * Normals estimation for structured pointclouds
 * C++ wrapper for ShapeDrive SDK
+* Holes filling for structured pointclouds
 
 ## How to install the Library
 
