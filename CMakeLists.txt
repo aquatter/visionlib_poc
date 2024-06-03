@@ -9,9 +9,9 @@ endfunction()
 option(BUILD_TEST_APP "Build test app" OFF)
 
 if(NOT ${BUILD_TEST_APP})
-    list(APPEND _3RD_PARTY_LIST "Sensor3d.dll" "tbb12.dll")
+    list(APPEND _3RD_PARTY_LIST "Sensor3d.dll" "tbb12.dll" "lz4.dll")
     list(APPEND _FILE_LIST "welib3d.dll" "welib3d.lib" "welib3dd.dll" "welib3dd.lib" "welib3dd.pdb")
-    set(_BASE_URL "https://github.com/aquatter/visionlib_poc/releases/download/v0.0.1/")
+    set(_BASE_URL "https://github.com/aquatter/visionlib_poc/releases/download/v0.0.2/")
 
     function(get_binaries path file_list)
         foreach(file_name ${file_list})

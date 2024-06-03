@@ -35,8 +35,7 @@ int main(int, char **) {
     MagicSORFilter{MagicSORFilterSettings{.image_width_ = pcd.width(),
                                           .image_height_ = pcd.height(),
                                           .minimal_cluster_size_ = 100,
-                                          .sigma_multiplier_ = 0.1f,
-                                          .minimum_neighbours_ = 2}}
+                                          .sigma_multiplier_ = 0.1f}}
         .apply(pcd);
 
     save_e57(pcd, "point_cloud_filtered.e57");
@@ -46,7 +45,7 @@ int main(int, char **) {
                                               .image_height_ = pcd.height(),
                                               .window_size_ = 11,
                                               .max_angle_ = 80.0f,
-                                              .filter_by_angle_ = true
+                                              .filter_by_angle_ = false
 
                      }}
         .estimate(pcd);
